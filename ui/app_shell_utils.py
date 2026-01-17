@@ -1,3 +1,15 @@
+from __future__ import annotations
+
+import inspect
+import re
+from typing import Any, Callable, Optional
+
+import streamlit as st
+
+# Matches: TypeError: foo() got an unexpected keyword argument 'bar'
+_UNEXPECTED_KW_RE = re.compile(r"unexpected keyword argument ['\"]([^'\"]+)['\"]")
+
+
 def _call_with_accepted_kwargs(fn: Callable[..., Any], **kwargs):
     """
     Backward-compat call helper:
@@ -61,5 +73,3 @@ def _require_import(name: str, import_attempts: list[Callable[[], Any]]) -> Any:
     if last:
         st.code(str(last))
     st.stop()
-
-
