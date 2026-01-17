@@ -156,7 +156,7 @@ def call_with_accepted_kwargs(fn, **kwargs):
 
 
 # -------------------------------
-# Access gate (keep behavior)
+# Access gate (email allowlist)
 # -------------------------------
 def _parse_allowed_emails_from_env() -> list[str]:
     raw = os.getenv("DSH_ALLOWED_EMAILS", "").strip()
@@ -196,6 +196,39 @@ def require_email_access_gate():
         st.caption("Email verification is currently disabled (accepting all emails).")
 
 
+# -------------------------------
+# Access gate (code) — TOGGLE + STICKY
+# -------------------------------
+ACCESS_CODE_ENABLED = False  # ✅ TRUE = require code, FALSE = disable code gate
+ACCESS_CODE = os.getenv("DSH_ACCESS_CODE", "early2026")
+
+
+def require_access_code_gate():
+    """
+    Code gate that is:
+      - toggleable (ACCESS_CODE_ENABLED)
+      - sticky (only once per session when enabled)
+    """
+    if not ACCESS_CODE_ENABLED:
+        return
+
+    if st.session_state.get("auth_access_ok") is True:
+        return
+
+    code = st.text_input("Enter early access code", type="password", key="auth_early_access_code")
+
+    if not code:
+        st.info("This app is currently in early access. Enter your code to continue.")
+        st.stop()
+
+    if code != ACCESS_CODE:
+        st.error("Invalid access code.")
+        st.stop()
+
+    st.session_state["auth_access_ok"] = True
+    st.success("Access granted ✅")
+
+
 # ============================================================
 # Main header (ONLY ONCE)
 # ============================================================
@@ -209,14 +242,9 @@ st.caption(
 
 
 # ============================================================
-# Early access gate (ONLY ONCE)
+# Gates (ONLY ONCE)
 # ============================================================
-ACCESS_CODE = os.getenv("DSH_ACCESS_CODE", "early2026")
-code = st.text_input("Enter early access code", type="password", key="auth_early_access_code")
-if code != ACCESS_CODE:
-    st.info("This app is currently in early access. Enter your code to continue.")
-    st.stop()
-
+require_access_code_gate()
 require_email_access_gate()
 
 
