@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from ui.app_shell_boot import _safe_imports
+
+
+def _call_with_accepted_kwargs(fn, /, **kwargs):
+    """
+    Call fn(**kwargs) but only pass parameters the function accepts.
+    This prevents UI breakage when modules evolve independently.
+    """
+    if fn is None:
+        raise TypeError("Attempted to call a None function.")
+    sig = inspect.signature(fn)
+    accepted = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    return fn(**accepted)
+
 
 def render_app() -> None:
     """
@@ -15,9 +29,18 @@ def render_app() -> None:
 
     # Paths
     base_dir = Path(__file__).resolve().parent.parent
+
+    if not hasattr(deps, "init_paths") or not callable(deps.init_paths):
+        st.error("Boot error: deps.init_paths is missing. (_safe_imports did not load expected functions.)")
+        st.stop()
+
     _base_dir, data_dir, workspaces_dir, suppliers_dir = deps.init_paths(base_dir)
 
     # Sidebar context (tenant/defaults/demo/suppliers)
+    if not hasattr(deps, "render_sidebar_context") or not callable(deps.render_sidebar_context):
+        st.error("Boot error: deps.render_sidebar_context is missing.")
+        st.stop()
+
     sb = deps.render_sidebar_context(
         data_dir=data_dir,
         workspaces_dir=workspaces_dir,
@@ -34,21 +57,26 @@ def render_app() -> None:
     demo_mode = bool(sb.get("demo_mode", False))
 
     # Optional: onboarding checklist
-    if callable(deps.render_onboarding_checklist):
+    if callable(getattr(deps, "render_onboarding_checklist", None)):
         try:
             deps.render_onboarding_checklist(expanded=True)
         except Exception:
             st.warning("Onboarding checklist failed to render (non-critical).")
 
     # Uploads + templates (fail-safe)
-    try:
-        uploads = _call_with_accepted_kwargs(deps.render_upload_and_templates)
-    except Exception as e:
-        st.warning("Uploads / templates UI failed; proceeding without uploads (non-critical).")
-        st.code(str(e))
-        uploads = None
+    uploads = None
+    if callable(getattr(deps, "render_upload_and_templates", None)):
+        try:
+            uploads = _call_with_accepted_kwargs(deps.render_upload_and_templates)
+        except Exception as e:
+            st.warning("Uploads / templates UI failed; proceeding without uploads (non-critical).")
+            st.code(str(e))
 
     # Raw inputs (demo-safe)
+    if not callable(getattr(deps, "resolve_raw_inputs", None)):
+        st.error("Boot error: deps.resolve_raw_inputs is missing.")
+        st.stop()
+
     raw_orders, raw_shipments, raw_tracking = _call_with_accepted_kwargs(
         deps.resolve_raw_inputs,
         demo_mode_active=demo_mode,
@@ -57,14 +85,19 @@ def render_app() -> None:
     )
 
     # Stop if required inputs are missing (unless demo)
-    _call_with_accepted_kwargs(
-        deps.stop_if_missing_required_inputs,
-        raw_orders=raw_orders,
-        raw_shipments=raw_shipments,
-        raw_tracking=raw_tracking,
-    )
+    if callable(getattr(deps, "stop_if_missing_required_inputs", None)):
+        _call_with_accepted_kwargs(
+            deps.stop_if_missing_required_inputs,
+            raw_orders=raw_orders,
+            raw_shipments=raw_shipments,
+            raw_tracking=raw_tracking,
+        )
 
     # Run pipeline
+    if not callable(getattr(deps, "run_pipeline", None)):
+        st.error("Boot error: deps.run_pipeline is missing.")
+        st.stop()
+
     pipe = deps.run_pipeline(
         raw_orders=raw_orders,
         raw_shipments=raw_shipments,
@@ -76,24 +109,26 @@ def render_app() -> None:
         default_promised_ship_days=promised_days,
         suppliers_df=suppliers_df,
         workspaces_dir=workspaces_dir,
-        normalize_orders=deps.normalize_orders,
-        normalize_shipments=deps.normalize_shipments,
-        normalize_tracking=deps.normalize_tracking,
-        reconcile_all=deps.reconcile_all,
-        enhance_explanations=deps.enhance_explanations,
-        enrich_followups_with_suppliers=deps.enrich_followups_with_suppliers,
-        add_missing_supplier_contact_exceptions=deps.add_missing_supplier_contact_exceptions,
-        add_urgency_column=deps.add_urgency_column,
-        build_supplier_scorecard_from_run=deps.build_supplier_scorecard_from_run,
-        make_daily_ops_pack_bytes=deps.make_daily_ops_pack_bytes,
-        workspace_root=deps.workspace_root,
-        render_sla_escalations=deps.render_sla_escalations,
-        apply_issue_tracker=deps.apply_issue_tracker,
-        render_issue_tracker_maintenance=deps.render_issue_tracker_maintenance,
-        IssueTrackerStore=deps.IssueTrackerStore,
-        build_customer_impact_view=deps.build_customer_impact_view,
-        mailto_link=deps.mailto_link,
-        render_workspaces_sidebar_and_maybe_override_outputs=deps.render_workspaces_sidebar_and_maybe_override_outputs,
+        normalize_orders=getattr(deps, "normalize_orders", None),
+        normalize_shipments=getattr(deps, "normalize_shipments", None),
+        normalize_tracking=getattr(deps, "normalize_tracking", None),
+        reconcile_all=getattr(deps, "reconcile_all", None),
+        enhance_explanations=getattr(deps, "enhance_explanations", None),
+        enrich_followups_with_suppliers=getattr(deps, "enrich_followups_with_suppliers", None),
+        add_missing_supplier_contact_exceptions=getattr(deps, "add_missing_supplier_contact_exceptions", None),
+        add_urgency_column=getattr(deps, "add_urgency_column", None),
+        build_supplier_scorecard_from_run=getattr(deps, "build_supplier_scorecard_from_run", None),
+        make_daily_ops_pack_bytes=getattr(deps, "make_daily_ops_pack_bytes", None),
+        workspace_root=getattr(deps, "workspace_root", None),
+        render_sla_escalations=getattr(deps, "render_sla_escalations", None),
+        apply_issue_tracker=getattr(deps, "apply_issue_tracker", None),
+        render_issue_tracker_maintenance=getattr(deps, "render_issue_tracker_maintenance", None),
+        IssueTrackerStore=getattr(deps, "IssueTrackerStore", None),
+        build_customer_impact_view=getattr(deps, "build_customer_impact_view", None),
+        mailto_link=getattr(deps, "mailto_link", None),
+        render_workspaces_sidebar_and_maybe_override_outputs=getattr(
+            deps, "render_workspaces_sidebar_and_maybe_override_outputs", None
+        ),
     )
 
     view = dict(pipe) if isinstance(pipe, dict) else {}
@@ -118,67 +153,82 @@ def render_app() -> None:
 
     with tabs[0]:
         try:
-            _call_with_accepted_kwargs(
-                deps.render_dashboard,
-                kpis=view.get("kpis", {}),
-                run_history_df=view.get("run_history_df", pd.DataFrame()),
-                view=view,
-            )
+            if callable(getattr(deps, "render_dashboard", None)):
+                _call_with_accepted_kwargs(
+                    deps.render_dashboard,
+                    kpis=view.get("kpis", {}),
+                    run_history_df=view.get("run_history_df", pd.DataFrame()),
+                    view=view,
+                )
+            else:
+                st.caption("Dashboard UI not available.")
         except Exception as e:
             st.warning("Dashboard failed to render (non-critical).")
             st.code(str(e))
 
     with tabs[1]:
         try:
-            _call_with_accepted_kwargs(
-                deps.render_ops_triage,
-                exceptions=view.get("exceptions", pd.DataFrame()),
-                followups_open=view.get("followups_open", pd.DataFrame()),
-                view=view,
-            )
+            if callable(getattr(deps, "render_ops_triage", None)):
+                _call_with_accepted_kwargs(
+                    deps.render_ops_triage,
+                    exceptions=view.get("exceptions", pd.DataFrame()),
+                    followups_open=view.get("followups_open", pd.DataFrame()),
+                    view=view,
+                )
+            else:
+                st.caption("Ops triage UI not available.")
         except Exception as e:
             st.warning("Ops triage failed to render (non-critical).")
             st.code(str(e))
 
     with tabs[2]:
         try:
-            _call_with_accepted_kwargs(
-                deps.render_exceptions_queue_section,
-                exceptions=view.get("exceptions", pd.DataFrame()),
-                view=view,
-            )
+            if callable(getattr(deps, "render_exceptions_queue_section", None)):
+                _call_with_accepted_kwargs(
+                    deps.render_exceptions_queue_section,
+                    exceptions=view.get("exceptions", pd.DataFrame()),
+                    view=view,
+                )
+            else:
+                st.caption("Exceptions queue UI not available.")
         except Exception as e:
             st.warning("Exceptions queue failed to render (non-critical).")
             st.code(str(e))
 
     with tabs[3]:
         try:
-            _call_with_accepted_kwargs(
-                deps.render_supplier_scorecards,
-                supplier_scorecards=view.get("supplier_scorecards", pd.DataFrame()),
-                scorecard=view.get("scorecard", pd.DataFrame()),
-                view=view,
-            )
+            if callable(getattr(deps, "render_supplier_scorecards", None)):
+                _call_with_accepted_kwargs(
+                    deps.render_supplier_scorecards,
+                    supplier_scorecards=view.get("supplier_scorecards", pd.DataFrame()),
+                    scorecard=view.get("scorecard", pd.DataFrame()),
+                    view=view,
+                )
+            else:
+                st.caption("Supplier scorecards UI not available.")
         except Exception as e:
             st.warning("Supplier scorecards failed to render (non-critical).")
             st.code(str(e))
 
     with tabs[4]:
         try:
-            _call_with_accepted_kwargs(
-                deps.render_ops_outreach_comms,
-                followups_open=view.get("followups_open", pd.DataFrame()),
-                customer_impact=view.get("customer_impact", pd.DataFrame()),
-                mailto_link=view.get("mailto_link", ""),
-                view=view,
-            )
+            if callable(getattr(deps, "render_ops_outreach_comms", None)):
+                _call_with_accepted_kwargs(
+                    deps.render_ops_outreach_comms,
+                    followups_open=view.get("followups_open", pd.DataFrame()),
+                    customer_impact=view.get("customer_impact", pd.DataFrame()),
+                    mailto_link=view.get("mailto_link", ""),
+                    view=view,
+                )
+            else:
+                st.caption("Ops outreach UI not available.")
         except Exception as e:
             st.warning("Ops outreach failed to render (non-critical).")
             st.code(str(e))
 
     with tabs[5]:
         try:
-            if callable(deps.render_sla_escalations_panel):
+            if callable(getattr(deps, "render_sla_escalations_panel", None)):
                 _call_with_accepted_kwargs(
                     deps.render_sla_escalations_panel,
                     escalations_df=view.get("escalations_df", pd.DataFrame()),
@@ -197,7 +247,7 @@ def render_app() -> None:
     with tabs[6]:
         try:
             issue_tracker_path = view.get("issue_tracker_path", None)
-            if callable(deps.render_issue_tracker_ui) and issue_tracker_path:
+            if callable(getattr(deps, "render_issue_tracker_ui", None)) and issue_tracker_path:
                 _call_with_accepted_kwargs(
                     deps.render_issue_tracker_ui,
                     issue_tracker_path=issue_tracker_path,
@@ -210,7 +260,7 @@ def render_app() -> None:
             st.code(str(e))
 
     with tabs[7]:
-        if callable(deps.render_kpi_trends):
+        if callable(getattr(deps, "render_kpi_trends", None)):
             try:
                 _call_with_accepted_kwargs(
                     deps.render_kpi_trends,
