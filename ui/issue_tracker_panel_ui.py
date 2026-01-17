@@ -1,13 +1,52 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any, Dict
 
 import pandas as pd
 import streamlit as st
 
-from ui.issue_tracker_maintenance_ui import render_issue_tracker_maintenance
-from ui.issue_tracker_ownership_ui import render_issue_ownership_panel
+from core.issue_tracker import IssueTrackerStore
+
+
+def _get_store(issue_tracker_path: Optional[Path] = None) -> IssueTrackerStore:
+    """
+    Always use the per-tenant store file when provided.
+    Falls back to IssueTrackerStore() default behavior if no path is given.
+    """
+    try:
+        return IssueTrackerStore(issue_tracker_path) if issue_tracker_path else IssueTrackerStore()
+    except Exception:
+        # absolute last resort: create a store in cwd (shouldn't happen)
+        return IssueTrackerStore()
+
+
+def _row_context(r: pd.Series) -> Dict[str, Any]:
+    """
+    Best-effort context payload saved alongside issue tracker entries.
+    Safe: only includes columns that commonly exist.
+    """
+    keys = [
+        "supplier_name",
+        "supplier_email",
+        "order_id",
+        "order_ids",
+        "sku",
+        "item_count",
+        "worst_escalation",
+        "urgency",
+        "reason",
+        "exception_type",
+    ]
+    ctx: Dict[str, Any] = {}
+    for k in keys:
+        if k in r.index:
+            v = r.get(k)
+            if pd.isna(v):
+                continue
+            ctx[k] = v if isinstance(v, (str, int, float, bool)) else str(v)
+    return ctx
+
 
 def render_issue_tracker_panel(
     followups_full: pd.DataFrame,
@@ -25,7 +64,7 @@ def render_issue_tracker_panel(
     """
     st.subheader(title)
 
-    if followups_full is None or followups_full.empty:
+    if followups_full is None or not isinstance(followups_full, pd.DataFrame) or followups_full.empty:
         st.caption("No follow-ups to track.")
         return followups_full
 
@@ -39,8 +78,12 @@ def render_issue_tracker_panel(
     df = followups_full.copy()
     df["issue_id"] = df["issue_id"].astype(str)
 
-    df["resolved"] = df["issue_id"].map(lambda k: bool((issue_map.get(str(k), {}) or {}).get("resolved", False)))
-    df["notes"] = df["issue_id"].map(lambda k: str((issue_map.get(str(k), {}) or {}).get("notes", "")))
+    df["resolved"] = df["issue_id"].map(
+        lambda k: bool((issue_map.get(str(k), {}) or {}).get("resolved", False))
+    )
+    df["notes"] = df["issue_id"].map(
+        lambda k: str((issue_map.get(str(k), {}) or {}).get("notes", ""))
+    )
 
     resolved_count = int(df["resolved"].sum())
     open_count = int(len(df) - resolved_count)
@@ -64,7 +107,7 @@ def render_issue_tracker_panel(
             "notes",
         ]
         cols_show = [c for c in cols_pref if c in df.columns]
-        work = df[cols_show].copy()
+        work = df[cols_show].copy() if cols_show else df.copy()
 
         sort_cols = []
         if "resolved" in work.columns:
@@ -94,6 +137,8 @@ def render_issue_tracker_panel(
                         iid = str(r.get("issue_id", "")).strip()
                         if not iid:
                             continue
+
+                        # Best-effort context (non-fatal if store doesn't support it)
                         ctx = _row_context(r)
 
                         try:
@@ -121,8 +166,10 @@ def render_issue_tracker_panel(
 
     # Merge latest state back into df (covers same-run edits)
     latest_map = store.load() or {}
-    df["resolved"] = df["issue_id"].map(lambda k: bool((latest_map.get(str(k), {}) or {}).get("resolved", False)))
-    df["notes"] = df["issue_id"].map(lambda k: str((latest_map.get(str(k), {}) or {}).get("notes", "")))
+    df["resolved"] = df["issue_id"].map(
+        lambda k: bool((latest_map.get(str(k), {}) or {}).get("resolved", False))
+    )
+    df["notes"] = df["issue_id"].map(
+        lambda k: str((latest_map.get(str(k), {}) or {}).get("notes", ""))
+    )
     return df
-
-
