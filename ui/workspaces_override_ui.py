@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pandas as pd
 
-# Canonical workspace sidebar UI lives here
 from ui.workspaces_ui import render_workspaces_sidebar
 
 
@@ -23,13 +22,6 @@ def render_workspaces_sidebar_and_maybe_override_outputs(
     kpis: dict,
     suppliers_df: pd.DataFrame,
 ):
-    """
-    Renders the Workspaces sidebar and returns potentially overridden outputs.
-
-    IMPORTANT:
-    - Uses the canonical implementation in ui/workspaces_ui.py (not duplicates),
-      so save/load/delete/run-pack behaviors stay consistent.
-    """
     res = render_workspaces_sidebar(
         workspaces_dir=workspaces_dir,
         account_id=account_id,
