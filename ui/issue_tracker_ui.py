@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+import pandas as pd
 import streamlit as st
 
 from ui.issue_tracker_ownership_ui import render_issue_ownership_panel
@@ -24,17 +25,22 @@ def render_issue_tracker_ui(
     Follow-up Tracker tab entrypoint.
 
     Thin facade:
-      - main tracker panel
+      - main tracker panel (requires followups_full)
       - ownership panel
 
-    NOTE: We intentionally do NOT pass `view` into the panel functions,
-    because some versions don't accept it.
+    We keep this compatible across versions by pulling followups_full from `view`.
     """
     if issue_tracker_path is None:
         st.caption("Issue tracker file not available.")
         return
 
+    view = view or {}
+    followups_full = view.get("followups_full", pd.DataFrame())
+    if not isinstance(followups_full, pd.DataFrame):
+        followups_full = pd.DataFrame()
+
     render_issue_tracker_panel(
+        followups_full,
         issue_tracker_path=issue_tracker_path,
         key_prefix=f"{key_prefix}_panel",
     )
