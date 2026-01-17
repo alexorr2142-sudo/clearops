@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import os
-import json
-import io
-import zipfile
-import shutil
 import inspect
+import traceback
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+
+
+# ============================================================
+# Ensure repo root is importable (Streamlit Cloud safety)
+# ============================================================
+REPO_ROOT = Path(__file__).resolve().parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 # ============================================================
@@ -103,18 +109,6 @@ try:
     from ui.supplier_accountability_ui import render_supplier_accountability  # type: ignore
 except Exception:
     render_supplier_accountability = None
-
-# Local pipeline modules
-try:
-    from normalize import normalize_orders, normalize_shipments, normalize_tracking  # noqa: F401
-    from reconcile import reconcile_all  # noqa: F401
-    from explain import enhance_explanations  # noqa: F401
-except Exception as e:
-    st.title(BRAND_NAME)
-    st.caption(TAGLINE)
-    st.error("Import error: one of your local .py files is missing or has an error.")
-    st.code(str(e))
-    st.stop()
 
 
 # ============================================================
@@ -208,11 +202,11 @@ def require_email_access_gate():
 st.title(BRAND_NAME)
 st.caption(TAGLINE)
 
-# Build stamp (timezone-aware)
 st.caption(
     f"Build stamp: `{datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')}` "
     f"(repo: `{os.getenv('STREAMLIT_APP_NAME','')}`)"
 )
+
 
 # ============================================================
 # Early access gate (ONLY ONCE)
@@ -227,24 +221,45 @@ require_email_access_gate()
 
 
 # ============================================================
-# RENDER THE REST OF THE APP (if present)
+# Local pipeline modules (keep existing behavior)
+# NOTE: leaving these as-is for now so you don't lose features.
+# We can move them into core/ later and update imports safely.
 # ============================================================
-# IMPORTANT: This file is currently acting as a safe orchestrator.
-# If you have a separate UI entrypoint function, we call it here.
-# This prevents legacy headers / gates from being rendered twice.
 try:
-    from ui.app_shell import render_app  # type: ignore
-except Exception:
-    render_app = None  # type: ignore
-
-if render_app is None:
-    st.warning(
-        "App shell not found (ui/app_shell.py). "
-        "Your repo appears to be missing the main rendering logic below the access gates. "
-        "If you expected sidebar/demo/pages, paste your full current app.py (the ~480+ line one) "
-        "or add ui/app_shell.py with render_app()."
-    )
+    from normalize import normalize_orders, normalize_shipments, normalize_tracking  # noqa: F401
+    from reconcile import reconcile_all  # noqa: F401
+    from explain import enhance_explanations  # noqa: F401
+except Exception as e:
+    st.error("Import error: one of your local .py files is missing or has an error.")
+    st.code(str(e))
+    st.code(traceback.format_exc())
     st.stop()
 
-# Delegate to UI shell (keeps app.py clean)
+
+# ============================================================
+# RENDER THE REST OF THE APP (ui/app_shell.py)
+# ============================================================
+try:
+    from ui.app_shell import render_app  # type: ignore
+except Exception as e:
+    st.error("Failed to import ui.app_shell.render_app() (this is not a 'missing file' issue).")
+    st.code(str(e))
+    st.code(traceback.format_exc())
+
+    # Helpful diagnostics for Streamlit Cloud root/path issues
+    st.subheader("Diagnostics")
+    st.write("Repo root (resolved):", str(REPO_ROOT))
+    st.write("Current working dir:", str(Path.cwd()))
+    st.write("sys.path[0:5]:")
+    st.code("\n".join(sys.path[:5]))
+
+    ui_dir = REPO_ROOT / "ui"
+    st.write("ui/ exists at repo root:", ui_dir.exists())
+    if ui_dir.exists():
+        st.write("Files in ui/:")
+        st.code("\n".join(sorted([p.name for p in ui_dir.iterdir()])))
+
+    st.stop()
+
+# Delegate to UI shell
 render_app()
