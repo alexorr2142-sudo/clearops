@@ -23,9 +23,12 @@ def render_issue_tracker_ui(
     """
     Follow-up Tracker tab entrypoint.
 
-    This is intentionally a thin facade:
+    Thin facade:
       - main tracker panel
       - ownership panel
+
+    NOTE: We intentionally do NOT pass `view` into the panel functions,
+    because some versions don't accept it.
     """
     if issue_tracker_path is None:
         st.caption("Issue tracker file not available.")
@@ -34,7 +37,6 @@ def render_issue_tracker_ui(
     render_issue_tracker_panel(
         issue_tracker_path=issue_tracker_path,
         key_prefix=f"{key_prefix}_panel",
-        view=view or {},
     )
 
     st.divider()
@@ -42,7 +44,6 @@ def render_issue_tracker_ui(
     render_issue_ownership_panel(
         issue_tracker_path=issue_tracker_path,
         key_prefix=f"{key_prefix}_own",
-        view=view or {},
     )
 
 
