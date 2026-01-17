@@ -103,7 +103,7 @@ def _safe_imports() -> _ShellDeps:
     except Exception:
         render_sla_escalations_panel = None
 
-    # ✅ FIX: issue tracker UI import (support both possible function names)
+    # ✅ FIX: Issue tracker UI must come from the facade we control
     try:
         from ui.issue_tracker_ui import render_issue_tracker_ui as render_issue_tracker_ui  # type: ignore
     except Exception:
@@ -230,7 +230,7 @@ def _safe_imports() -> _ShellDeps:
     except Exception:
         mailto_link = None
 
-    # Override loader (correct module)
+    # Workspaces override loader (correct module)
     try:
         from ui.workspaces_override_ui import (  # type: ignore
             render_workspaces_sidebar_and_maybe_override_outputs,
