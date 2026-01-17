@@ -1,3 +1,4 @@
+# ui/app_shell_render.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -118,12 +119,14 @@ def render_app() -> None:
         ]
     )
 
+    # ---------------- Dashboard ----------------
     with tabs[0]:
         try:
             _call_with_accepted_kwargs(
                 deps.render_dashboard,
                 kpis=view.get("kpis", {}),
                 run_history_df=view.get("run_history_df", pd.DataFrame()),
+                # Some versions require these:
                 exceptions=view.get("exceptions", pd.DataFrame()),
                 followups_open=view.get("followups_open", pd.DataFrame()),
                 workspaces_dir=workspaces_dir,
@@ -135,12 +138,14 @@ def render_app() -> None:
             st.warning("Dashboard failed to render (non-critical).")
             st.code(str(e))
 
+    # ---------------- Ops Triage ----------------
     with tabs[1]:
         try:
             _call_with_accepted_kwargs(
                 deps.render_ops_triage,
                 exceptions=view.get("exceptions", pd.DataFrame()),
                 followups_open=view.get("followups_open", pd.DataFrame()),
+                # Newly required in some versions:
                 ops_pack_bytes=view.get("ops_pack_bytes", b""),
                 pack_name=view.get("pack_name", "daily_ops_pack.zip"),
                 view=view,
@@ -149,6 +154,7 @@ def render_app() -> None:
             st.warning("Ops triage failed to render (non-critical).")
             st.code(str(e))
 
+    # ---------------- Exceptions Queue ----------------
     with tabs[2]:
         try:
             _call_with_accepted_kwargs(
@@ -160,18 +166,32 @@ def render_app() -> None:
             st.warning("Exceptions queue failed to render (non-critical).")
             st.code(str(e))
 
+    # ---------------- Supplier Scorecards ----------------
     with tabs[3]:
         try:
+            ws_root = view.get("ws_root", None)
+
+            # Optional trend loader (passed only if the UI accepts it)
+            try:
+                from core.scorecards import load_recent_scorecard_history  # type: ignore
+            except Exception:
+                load_recent_scorecard_history = None  # type: ignore
+
             _call_with_accepted_kwargs(
                 deps.render_supplier_scorecards,
+                # different variants across versions
                 supplier_scorecards=view.get("supplier_scorecards", pd.DataFrame()),
                 scorecard=view.get("scorecard", pd.DataFrame()),
+                # required in some versions
+                ws_root=ws_root,
+                load_recent_scorecard_history=load_recent_scorecard_history,
                 view=view,
             )
         except Exception as e:
             st.warning("Supplier scorecards failed to render (non-critical).")
             st.code(str(e))
 
+    # ---------------- Ops Outreach (Comms) ----------------
     with tabs[4]:
         try:
             _call_with_accepted_kwargs(
@@ -185,6 +205,7 @@ def render_app() -> None:
             st.warning("Ops outreach failed to render (non-critical).")
             st.code(str(e))
 
+    # ---------------- SLA Escalations ----------------
     with tabs[5]:
         try:
             if callable(deps.render_sla_escalations_panel):
@@ -203,6 +224,7 @@ def render_app() -> None:
             st.warning("SLA escalations failed to render (non-critical).")
             st.code(str(e))
 
+    # ---------------- Follow-up Tracker ----------------
     with tabs[6]:
         try:
             issue_tracker_path = view.get("issue_tracker_path", None)
@@ -218,6 +240,7 @@ def render_app() -> None:
             st.warning("Follow-up tracker failed to render (non-critical).")
             st.code(str(e))
 
+    # ---------------- KPI Trends ----------------
     with tabs[7]:
         if callable(deps.render_kpi_trends):
             try:
