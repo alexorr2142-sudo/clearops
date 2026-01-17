@@ -40,3 +40,6 @@ def render_workspaces_sidebar_and_maybe_override_outputs(
         key_prefix="ws",
     )
     return res.exceptions, res.followups_full, res.order_rollup, res.line_status_df, res.suppliers_df
+
+
+__all__ = ["render_workspaces_sidebar_and_maybe_override_outputs"]
