@@ -156,9 +156,16 @@ def render_app() -> None:
             if callable(getattr(deps, "render_dashboard", None)):
                 _call_with_accepted_kwargs(
                     deps.render_dashboard,
+                    # existing
                     kpis=view.get("kpis", {}),
                     run_history_df=view.get("run_history_df", pd.DataFrame()),
                     view=view,
+                    # add required args (fix)
+                    exceptions=view.get("exceptions", pd.DataFrame()),
+                    followups_open=view.get("followups_open", pd.DataFrame()),
+                    workspaces_dir=workspaces_dir,
+                    account_id=account_id,
+                    store_id=store_id,
                 )
             else:
                 st.caption("Dashboard UI not available.")
