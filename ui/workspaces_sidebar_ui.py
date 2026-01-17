@@ -1,10 +1,7 @@
-"""
-Compatibility wrapper.
+"""Compatibility wrapper for legacy imports.
 
-This repo has a canonical Workspaces sidebar implementation in ui/workspaces_ui.py.
-
-To prevent duplicate logic (and signature mismatches like save_run kwargs),
-this module re-exports the canonical functions/types so legacy imports keep working.
+Do not duplicate workspace sidebar logic here.
+Canonical implementation lives in ui/workspaces_ui.py.
 """
 
 from __future__ import annotations
