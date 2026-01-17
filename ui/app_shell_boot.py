@@ -1,10 +1,9 @@
-# ui/app_shell.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Callable
-import inspect
+
 import re
 
 import pandas as pd
@@ -157,7 +156,6 @@ def _safe_imports() -> _ShellDeps:
         ],
     )
 
-    # core/suppliers.py (confirmed)
     enrich_followups_with_suppliers = _require_import(
         "enrich_followups_with_suppliers",
         [
@@ -171,7 +169,6 @@ def _safe_imports() -> _ShellDeps:
         ],
     )
 
-    # Likely in one of these core modules
     add_urgency_column = _require_import(
         "add_urgency_column",
         [
@@ -229,8 +226,11 @@ def _safe_imports() -> _ShellDeps:
     except Exception:
         mailto_link = None
 
+    # ✅ FIX: import override function from the correct module
     try:
-        from ui.workspaces_ui import render_workspaces_sidebar_and_maybe_override_outputs  # type: ignore
+        from ui.workspaces_override_ui import (  # type: ignore
+            render_workspaces_sidebar_and_maybe_override_outputs,
+        )
     except Exception:
         render_workspaces_sidebar_and_maybe_override_outputs = None
 
@@ -270,5 +270,3 @@ def _safe_imports() -> _ShellDeps:
         render_workspaces_sidebar=render_workspaces_sidebar,
         init_paths=init_paths,
     )
-
-
