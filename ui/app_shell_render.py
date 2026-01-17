@@ -105,6 +105,12 @@ def render_app() -> None:
     if "supplier_scorecards" not in view and "scorecard" in view:
         view["supplier_scorecards"] = view.get("scorecard", pd.DataFrame())
 
+    # Handy shared values for renderers that now require them
+    ws_root = view.get("ws_root", None)
+    issue_tracker_path = view.get("issue_tracker_path", None)
+    scorecard_df = view.get("scorecard", pd.DataFrame())
+    contact_statuses = view.get("contact_statuses", {})  # may be dict or df depending on version
+
     # ---------- Main tabs ----------
     tabs = st.tabs(
         [
@@ -169,8 +175,6 @@ def render_app() -> None:
     # ---------------- Supplier Scorecards ----------------
     with tabs[3]:
         try:
-            ws_root = view.get("ws_root", None)
-
             # Optional trend loader (passed only if the UI accepts it)
             try:
                 from core.scorecards import load_recent_scorecard_history  # type: ignore
@@ -181,7 +185,7 @@ def render_app() -> None:
                 deps.render_supplier_scorecards,
                 # different variants across versions
                 supplier_scorecards=view.get("supplier_scorecards", pd.DataFrame()),
-                scorecard=view.get("scorecard", pd.DataFrame()),
+                scorecard=scorecard_df,
                 # required in some versions
                 ws_root=ws_root,
                 load_recent_scorecard_history=load_recent_scorecard_history,
@@ -199,6 +203,11 @@ def render_app() -> None:
                 followups_open=view.get("followups_open", pd.DataFrame()),
                 customer_impact=view.get("customer_impact", pd.DataFrame()),
                 mailto_link=view.get("mailto_link", ""),
+                # Newly required in some versions:
+                scorecard=scorecard_df,
+                ws_root=ws_root,
+                issue_tracker_path=issue_tracker_path,
+                contact_statuses=contact_statuses,
                 view=view,
             )
         except Exception as e:
@@ -227,7 +236,6 @@ def render_app() -> None:
     # ---------------- Follow-up Tracker ----------------
     with tabs[6]:
         try:
-            issue_tracker_path = view.get("issue_tracker_path", None)
             if callable(deps.render_issue_tracker_ui) and issue_tracker_path:
                 _call_with_accepted_kwargs(
                     deps.render_issue_tracker_ui,
