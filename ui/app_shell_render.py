@@ -10,6 +10,25 @@ from ui.app_shell_boot import _safe_imports
 from ui.app_shell_utils import _call_with_accepted_kwargs
 
 
+def _fallback_issue_tracker_renderer():
+    """
+    Try to import the follow-up tracker UI directly.
+    Supports multiple historical export names.
+    Returns callable or None.
+    """
+    try:
+        from ui.issue_tracker_ui import render_issue_tracker_ui as fn  # type: ignore
+        return fn
+    except Exception:
+        pass
+
+    try:
+        from ui.issue_tracker_ui import render_issue_tracker as fn  # type: ignore
+        return fn
+    except Exception:
+        return None
+
+
 def render_app() -> None:
     """
     Main app body AFTER access gates.
@@ -107,6 +126,13 @@ def render_app() -> None:
     scorecard_df = view.get("scorecard", pd.DataFrame())
     contact_statuses = view.get("contact_statuses", {})
 
+    # If pipeline didn't provide issue_tracker_path but ws_root exists, infer it
+    if issue_tracker_path is None and isinstance(ws_root, (str, Path)) and str(ws_root):
+        try:
+            issue_tracker_path = Path(ws_root) / "issue_tracker.json"
+        except Exception:
+            issue_tracker_path = None
+
     # Backward-compat mapping
     if "supplier_scorecards" not in view and "scorecard" in view:
         view["supplier_scorecards"] = view.get("scorecard", pd.DataFrame())
@@ -173,7 +199,6 @@ def render_app() -> None:
     # Supplier Scorecards
     with tabs[3]:
         try:
-            # optional trend loader (only used if the renderer accepts it)
             try:
                 from core.scorecards import load_recent_scorecard_history  # type: ignore
             except Exception:
@@ -228,17 +253,24 @@ def render_app() -> None:
             st.warning("SLA escalations failed to render (non-critical).")
             st.code(str(e))
 
-    # Follow-up Tracker
+    # Follow-up Tracker (self-healing)
     with tabs[6]:
         try:
-            if callable(getattr(deps, "render_issue_tracker_ui", None)) and issue_tracker_path:
+            fn = getattr(deps, "render_issue_tracker_ui", None)
+            if not callable(fn):
+                fn = _fallback_issue_tracker_renderer()
+
+            if callable(fn) and issue_tracker_path is not None:
                 _call_with_accepted_kwargs(
-                    deps.render_issue_tracker_ui,
+                    fn,
                     issue_tracker_path=issue_tracker_path,
                     view=view,
                 )
             else:
                 st.caption("Follow-up tracker UI not available.")
+                # helpful, safe debug
+                st.caption(f"Debug: issue_tracker_path = `{issue_tracker_path}`")
+                st.caption(f"Debug: deps renderer callable = `{callable(getattr(deps,'render_issue_tracker_ui',None))}`")
         except Exception as e:
             st.warning("Follow-up tracker failed to render (non-critical).")
             st.code(str(e))
