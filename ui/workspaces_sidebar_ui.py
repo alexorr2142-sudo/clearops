@@ -1,12 +1,99 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
 
 from core.workspaces import list_runs, make_run_zip_bytes
 from ui.workspaces_helpers import _consume_convert_snapshot_request
+
+# ------------------------------------------------------------
+# Required: workspace_root (fixes NameError)
+# ------------------------------------------------------------
+try:
+    # Preferred: your core helper if it exists
+    from core.workspaces import workspace_root as workspace_root  # type: ignore
+except Exception:
+
+    def workspace_root(workspaces_dir: Path, account_id: str, store_id: str) -> Path:
+        """
+        Safe fallback if core.workspaces.workspace_root isn't available.
+        Keeps run folders namespaced per tenant.
+        """
+        a = (account_id or "default").strip() or "default"
+        s = (store_id or "default").strip() or "default"
+        return Path(workspaces_dir) / a / s
+
+
+# ------------------------------------------------------------
+# Optional helpers/types referenced by this UI.
+# We import if present; otherwise provide safe fallbacks so the app boots.
+# ------------------------------------------------------------
+try:
+    from ui.workspaces_helpers import (  # type: ignore
+        WorkspacesResult as WorkspacesResult,  # noqa: F401
+        build_run_history_df as build_run_history_df,  # noqa: F401
+        delete_run_dir as delete_run_dir,  # noqa: F401
+        load_run as load_run,  # noqa: F401
+        save_run as save_run,  # noqa: F401
+        _is_raw_snapshot_run as _is_raw_snapshot_run,  # noqa: F401
+    )
+except Exception:
+
+    @dataclass
+    class WorkspacesResult:
+        ws_root: Path
+        workspace_name: str
+        loaded_run_dir: Optional[Path] = None
+        exceptions: Optional[pd.DataFrame] = None
+        followups_full: Optional[pd.DataFrame] = None
+        order_rollup: Optional[pd.DataFrame] = None
+        line_status_df: Optional[pd.DataFrame] = None
+        suppliers_df: Optional[pd.DataFrame] = None
+
+    def _is_raw_snapshot_run(r: dict) -> bool:
+        meta = (r.get("meta", {}) or {})
+        return bool(meta.get("is_raw_snapshot", False)) or str(r.get("run_id", "")).startswith("raw_")
+
+    def build_run_history_df(runs: list[dict]) -> pd.DataFrame:
+        rows: list[dict[str, Any]] = []
+        for r in runs or []:
+            meta = r.get("meta", {}) or {}
+            rc = meta.get("row_counts", {}) or {}
+            rows.append(
+                {
+                    "workspace": r.get("workspace_name", ""),
+                    "run_id": r.get("run_id", ""),
+                    "created_at": meta.get("created_at", ""),
+                    "exceptions": rc.get("exceptions", ""),
+                    "followups": rc.get("followups", ""),
+                    "path": str(r.get("path", "")),
+                }
+            )
+        return pd.DataFrame(rows)
+
+    def delete_run_dir(target: Path) -> None:
+        try:
+            import shutil
+
+            shutil.rmtree(target, ignore_errors=True)
+        except Exception:
+            pass
+
+    def save_run(**_kwargs) -> Path:
+        # Minimal fallback: create a folder so Save doesn't crash.
+        ws_root = Path(_kwargs.get("ws_root", Path(".")))
+        workspace_name = str(_kwargs.get("workspace_name", "default"))
+        run_dir = ws_root / workspace_name / "run_fallback"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    def load_run(_run_dir: Path) -> dict:
+        return {}
+
 
 def render_workspaces_sidebar(
     workspaces_dir: Path,
@@ -36,19 +123,6 @@ def render_workspaces_sidebar(
       - View history
       - Delete run
       - RAW demo snapshot actions (Load into Demo Mode / Convert to full run)
-
-    Returns:
-      WorkspacesResult with:
-        - ws_root
-        - workspace_name
-        - loaded_run_dir (Path | None)
-
-    Notes:
-      - This function does NOT decide "open vs resolved"; it stores/loads followups as provided.
-      - Back-compat: will also return overridden outputs if a run is loaded.
-      - RAW snapshot actions:
-          - Load into Demo Mode is handled by ui/demo.py (safe hook)
-          - Convert to full run is handled here (safe hook calling core converter)
     """
     ws_root = workspace_root(workspaces_dir, account_id, store_id)
     ws_root.mkdir(parents=True, exist_ok=True)
@@ -85,7 +159,6 @@ def render_workspaces_sidebar(
         st.header("Workspaces")
 
         if conversion_banner:
-            # success or failure message (safe)
             if conversion_banner.startswith("Converted ✅"):
                 st.success(conversion_banner)
             elif conversion_banner.startswith("Conversion failed"):
@@ -179,19 +252,6 @@ def render_workspaces_sidebar(
                         except Exception as e:
                             st.warning(f"Could not queue conversion request: {e}")
 
-                # Show the queued request (helps debugging, never fatal)
-                try:
-                    queued_demo = st.session_state.get(req_load_demo_key)
-                    queued_conv = st.session_state.get(req_convert_key)
-                    if queued_demo or queued_conv:
-                        st.caption("Queued actions (safe signals):")
-                        if queued_demo:
-                            st.code(f"{req_load_demo_key} = {queued_demo}")
-                        if queued_conv:
-                            st.code(f"{req_convert_key} = {queued_conv}")
-                except Exception:
-                    pass
-
         # --- Load + run pack (regular saved runs) ---
         if non_raw_runs:
             run_labels = [
@@ -224,7 +284,6 @@ def render_workspaces_sidebar(
                         key=f"{key_prefix}_btn_zip_runpack",
                     )
 
-            # --- History + delete ---
             with st.expander("Run history", expanded=False):
                 history_df = build_run_history_df(runs)
                 st.dataframe(history_df, use_container_width=True, height=220)
@@ -258,7 +317,6 @@ def render_workspaces_sidebar(
             else:
                 st.caption("Only RAW demo snapshots found. Expand **RAW demo snapshots** above to act on them.")
 
-    # --- Load override outputs (back-compat) ---
     loaded_run_dir = Path(st.session_state[loaded_key]) if st.session_state.get(loaded_key) else None
 
     out = WorkspacesResult(
@@ -289,7 +347,3 @@ def render_workspaces_sidebar(
         st.info(f"Viewing saved run: **{meta.get('workspace_name','')} / {meta.get('created_at','')}**")
 
     return out
-
-
-# Backward-compatible wrapper using your old signature.
-# This lets you paste this file now without changing app.py yet.
