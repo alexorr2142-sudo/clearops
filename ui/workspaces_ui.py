@@ -6,6 +6,10 @@ Includes:
 - Download run pack
 - Run history + delete
 - RAW snapshot conversion (optional; never breaks app)
+
+IMPORTANT:
+- save_run() signature can vary across versions.
+- We call it with signature-filtering to prevent TypeError crashes.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+import inspect
 
 import pandas as pd
 import streamlit as st
@@ -32,6 +37,21 @@ try:
     from core.workspaces import convert_raw_snapshot_to_full_run
 except Exception:  # pragma: no cover
     convert_raw_snapshot_to_full_run = None  # type: ignore
+
+
+def _call_with_accepted_kwargs(fn, /, **kwargs):
+    """
+    Call helper:
+      - filters kwargs based on function signature (best-effort)
+      - prevents TypeError: unexpected keyword argument
+    """
+    try:
+        sig = inspect.signature(fn)
+        filtered = {k: v for k, v in kwargs.items() if k in sig.parameters}
+        return fn(**filtered)
+    except Exception:
+        # If we can't introspect, just call as-is (may still error, but rare)
+        return fn(**kwargs)
 
 
 @dataclass
@@ -137,7 +157,6 @@ def render_workspaces_sidebar(
     st.session_state.setdefault(req_load_demo_key, None)
     st.session_state.setdefault(req_convert_key, None)
 
-    # Consume conversion request (safe)
     conversion_banner: Optional[str] = None
     try:
         _new_dir, msg = _consume_convert_snapshot_request(
@@ -169,12 +188,13 @@ def render_workspaces_sidebar(
 
         workspace_name = st.text_input("Workspace name", value="default", key=f"{key_prefix}_name")
 
-        # ✅ RESTORED: Save run button
+        # ✅ Save run (signature-safe)
         if st.button("💾 Save this run", key=f"{key_prefix}_btn_save"):
             if orders is None or shipments is None:
                 st.error("Cannot save: orders/shipments not available.")
             else:
-                run_dir = save_run(
+                run_dir = _call_with_accepted_kwargs(
+                    save_run,
                     ws_root=ws_root,
                     workspace_name=workspace_name,
                     account_id=account_id,
@@ -185,19 +205,19 @@ def render_workspaces_sidebar(
                     tracking=tracking if tracking is not None else pd.DataFrame(),
                     exceptions=exceptions if exceptions is not None else pd.DataFrame(),
                     followups_full=followups_full if followups_full is not None else pd.DataFrame(),
+                    followups=followups_full if followups_full is not None else pd.DataFrame(),  # alt name
                     order_rollup=order_rollup if order_rollup is not None else pd.DataFrame(),
                     line_status_df=line_status_df if line_status_df is not None else pd.DataFrame(),
                     kpis=kpis if isinstance(kpis, dict) else {},
                     suppliers_df=suppliers_df if suppliers_df is not None else pd.DataFrame(),
                 )
-                st.success(f"Saved ✅ {workspace_name}/{run_dir.name}")
+                st.success(f"Saved ✅ {workspace_name}/{Path(run_dir).name}")
                 st.session_state[loaded_key] = str(run_dir)
 
         runs = list_runs(ws_root) or []
         raw_runs = [r for r in runs if _is_raw_snapshot_run(r)]
         non_raw_runs = [r for r in runs if r not in raw_runs]
 
-        # RAW snapshots
         if raw_runs:
             with st.expander("🧪 RAW demo snapshots", expanded=False):
                 raw_labels = []
@@ -242,7 +262,6 @@ def render_workspaces_sidebar(
                         st.success("Converting… ✅")
                         st.rerun()
 
-        # Load + run pack
         if non_raw_runs:
             run_labels = [
                 f"{r['workspace_name']} / {r['run_id']}  (exceptions: {r.get('meta', {}).get('row_counts', {}).get('exceptions', '?')})"
