@@ -103,10 +103,14 @@ def _safe_imports() -> _ShellDeps:
     except Exception:
         render_sla_escalations_panel = None
 
+    # ✅ FIX: issue tracker UI import (support both possible function names)
     try:
-        from ui.issue_tracker_ui import render_issue_tracker as render_issue_tracker_ui
+        from ui.issue_tracker_ui import render_issue_tracker_ui as render_issue_tracker_ui  # type: ignore
     except Exception:
-        render_issue_tracker_ui = None
+        try:
+            from ui.issue_tracker_ui import render_issue_tracker as render_issue_tracker_ui  # type: ignore
+        except Exception:
+            render_issue_tracker_ui = None
 
     try:
         from ui.kpi_trends_ui import render_kpi_trends
@@ -226,7 +230,7 @@ def _safe_imports() -> _ShellDeps:
     except Exception:
         mailto_link = None
 
-    # ✅ FIX: import override function from the correct module
+    # Override loader (correct module)
     try:
         from ui.workspaces_override_ui import (  # type: ignore
             render_workspaces_sidebar_and_maybe_override_outputs,
